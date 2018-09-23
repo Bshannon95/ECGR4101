@@ -22,23 +22,33 @@ uint32_t ADCValue[1];
 
 ADC_Setup();
      
-  while(1) {
+     uint32_t ui32ADC0Value[1];
+     uint32_t avg_adcvalue;
+     uint32_t LED_value_current = 0;
+     uint32_t LED_value_sent = 0;
+
          
-    //Before starting the ADC conversion clear the Interrupt status using the below command.
-    ADCIntClear ( ADC0_BASE , 3);
-         
-    //trigger the ADC conversion by using ADCProcessorTrigger command
-    ADCProcessorTrigger(ADC0_BASE,3);
-    ADCSequenceDataGet(ADC0_BASE, 3, ADCValue);
-         
-    
-    printf("yes %d\n", ADCValue[0]);
-         
-    SysCtlDelay(20000000);
-         
-         
-         
-  }
+      while(1)
+      {
+          // CLEAR INTERRUPT FLAG FOR ADC0, SEQUENCER 1
+          ADCIntClear(ADC0_BASE, 1);
+          // TRIGGER IS GIVEN FOR ADC 0 MODULE, SEQUENCER 1
+          ADCProcessorTrigger(ADC0_BASE, 1);
+          // STORE THE CONVERTED VALUE FOR ALL DIFFERENT SAMPLING IN ARRAY
+          ADCSequenceDataGet(ADC0_BASE, 1, ui32ADC0Value);
+            
+             if(SW2 == 0x00) { //check to see if switch is pressed
+                 avg_adcvalue = potAvgValue(ui32ADC0Value[1]);
+                 LightLED(potAvgValue);
+                 
+             }
+             else {
+                 avg_adcvalue = photoAvgValue(ui32ADC0Value[1]);
+                 LightLED(photoAvgValue);
+                 
+             }
+      }
+     
      
 }
 
@@ -48,7 +58,9 @@ ADC_Setup();
  {
       SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN);
       SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
-      SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+      SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB); //enable GPIO port B for photo
+      SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE); //enable GPIO port E for pot
+     
      // Wait for the ADC0 module to be ready
      while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC0)) {
          
@@ -56,12 +68,14 @@ ADC_Setup();
       GPIOPinTypeADC(GPIO_PORTA_BASE, GPIO_PIN_3);
       SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF); //enable GPIO port for LED
      
-      GPIOPinTypeGPIOInput(GPIO_PORTA_BASE, GPIO_PIN_5);
-      GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_2); //enable pin for LED PF2
-      GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_4); //enable pin for LED PF4
-      ADCSequenceConfigure(ADC0_BASE, 3, ADC_TRIGGER_PROCESSOR, 0);
-      ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_IE | ADC_CTL_CH4 );
-      ADCSequenceEnable(ADC0_BASE, 0);)
+      GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_0); // enable pin for LED
+      SW2 = GPIO_PORTF_DATA_R&0x01; // read PF0 into SW2
+     
+      GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_0); //enable pin for photo PD0
+      GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_5); //enable pin for pot PE2
+      ADCSequenceConfigure(ADC0_BASE, 1, ADC_TRIGGER_PROCESSOR, 0);
+      ADCSequenceStepConfigure(ADC0_BASE, 1, 0, ADC_CTL_CH0);
+      ADCSequenceEnable(ADC0_BASE, 1);)
  }
 
 
@@ -90,6 +104,33 @@ ADC_Setup();
      }
      return sum;
  }
+
+
+/**************************************************/
+//Purpose:Takes the current value of the photoresistor, stores it in an array,
+//takes the average of the array and outputs the average value.
+/**************************************************/
+int photoAvgValue(int val)
+{
+    int sum = 0;
+    char addr = photo_AvgCountVal % 10;
+    photo_array[addr] = val;
+    int var;
+    for ( var = 0; var < 10; var++)
+    {
+        sum += photo_array[var];
+    }
+    photo_AvgCountVal++;
+    if(photo_AvgCountVal <= 10)
+    {
+        sum /= photo_AvgCountVal;
+    }
+    else
+    {
+        sum /= 10;
+    }
+    return sum;
+}
 
 
  /**************************************************/
