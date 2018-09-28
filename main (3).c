@@ -1,3 +1,12 @@
+/************************************
+*
+* COURSE: ECGR 4101/5101
+* PROJECT: Lab Three
+* AUTHORS: Bryson Shannon | Margaret Reichard
+* FILENAME: main.c
+*
+************************************/
+
 #include<stdint.h>
 #include<stdio.h>
 #include<stdbool.h>
@@ -7,32 +16,36 @@
 #include "inc/hw_types.h"
 #include "inc/hw_gpio.h"
 #include "inc/hw_sysctl.h"
+#include "inc/hw_pwm.h"
 #include "driverlib/gpio.h"
 #include "driverlib/interrupt.h"
 #include "driverlib/pin_map.h"
 #include "driverlib/sysctl.h"
-#include"driverlib/adc.h"
+#include "driverlib/adc.h"
 #include "driverlib/pwm.h"
 
 
 /********************VARIABLES*********************/
- volatile int pot = 0 , photo = 0;
- volatile long int photo_AvgCounterVal = 0,pot_AvgCounterVal = 0, array_size = 40;
- volatile int photo_array[40],pot_array[40];
- /**************************************************/
+volatile int pot = 0 , photo = 0;
+volatile long int photo_AvgCounterVal = 0,pot_AvgCounterVal = 0, array_size = 40;
+volatile int photo_array[40],pot_array[40];
+uint32_t ui32ADC0Value[1];
+volatile uint32_t avg_potvalue;
+volatile uint32_t avg_photovalue;
+/**************************************************/
 
- /********************FUNCTIONS********************/
- uint32_t potAvgValue(uint32_t val);  uint32_t photoAvgValue(uint32_t val); void Pot(void);
- void Photoresistor(void);void LightLED(uint32_t value); void setupPWM_PE5_PB4();void LEDTest(void);
- /**************************************************/
+/********************FUNCTIONS********************/
+void ADC_Setup(void);uint32_t potAvgValue(uint32_t val);  uint32_t photoAvgValue(uint32_t val); void Pot(void);
+void Photoresistor(void);void LightLED(uint32_t value); void setupPWM_PE5_PB4();void LEDTest(void);
+/**************************************************/
+
 /**
  * main.c
  */
- uint32_t ui32ADC0Value[1];
- volatile    uint32_t avg_potvalue;
- volatile    uint32_t avg_photovalue;
- int main(void) {
-//setup LEDs
+
+ int main(void)
+ {
+ //setup LEDs
 
  SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
  SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
@@ -49,8 +62,10 @@
  GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_2);//PB2
                                                     //PE5      NOT GPIO
                                                     //PB4  MSB NOT GPIO
+ //setup pin PE5 AND PB4 for PWM
  setupPWM_PE5_PB4();
 
+ //configure SW2
  //https://e2e.ti.com/support/microcontrollers/f/908/t/351475?Problem-using-interrupt-with-SW1-on-Tiva-Launchpad
  SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
  HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY; //configures sw2
@@ -63,6 +78,8 @@ uint32_t SW2=0;
 bool SW2_Flag = false;
 bool pot_adc_setup = false;
 bool photo_adc_setup = false;
+
+//test that all LEDs are operational
 //LEDTest();
       while(1)
       {
@@ -76,10 +93,10 @@ bool photo_adc_setup = false;
           }
           if(SW2_Flag == 1)
           {
-              //setup for pot
-
+              //check if the pin has already been configured for ADC
                 if (!pot_adc_setup) {
 
+                    //setup for pot for ADC
                     while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC0)) {}
                     GPIOPinTypeADC(GPIO_PORTB_BASE, GPIO_PIN_5); //enable pin for pot PB5
                     ADCSequenceConfigure(ADC0_BASE, 1, ADC_TRIGGER_PROCESSOR, 0);
@@ -92,8 +109,9 @@ bool photo_adc_setup = false;
           }
           else
           {
-
+            //check if the pin has already been configured for ADC
             if (!photo_adc_setup) {
+                //setup photo resistor ADC
                 SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
                 while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC0)) {}
                 SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
@@ -106,11 +124,15 @@ bool photo_adc_setup = false;
               Photoresistor();//starts first
               SysCtlDelay(3000);
           }
-      
-      }     
-}
+      }
 
+ }
 
+/**************************************************/
+//Purpose: Setup the ADC for pins PD0 and PB5
+//Parameters: None.
+//Output: None.
+/**************************************************/
 
 // void ADC_Setup(void)
 //  {
@@ -144,7 +166,12 @@ bool photo_adc_setup = false;
 //
 
 
-
+/**************************************************/
+//Purpose: Measure the analog value of the pot and sends the value to
+//the potAvgValue and the LightLED function.
+//Parameters: None.
+//Output: None.
+/**************************************************/
 void Pot(void)
 {
     uint32_t val = 0;
@@ -155,21 +182,28 @@ void Pot(void)
     // STORE THE CONVERTED VALUE FOR ALL DIFFERENT SAMPLING IN ARRAY
     //ui32ADC0Value
     ADCSequenceDataGet(ADC0_BASE, 1, ui32ADC0Value);
+    //take the average value of the pot
     avg_potvalue = potAvgValue(ui32ADC0Value[0]);
+    //change the value to fit in a set range
     val = (uint32_t)(avg_potvalue / 4);
+    //light an LED based on the value
     LightLED(val);
 }
 
 /**************************************************/
 //Purpose:Takes the current value of the potentiometer, stores it in an array,
 //takes the average of the array and outputs the average value.
+//Parameters: uint32_t val - Current ADC value from the pot.
+//Output: The averaged value of the pot.
 /**************************************************/
 uint32_t potAvgValue(uint32_t val)
 {
     uint32_t sum = 0;
+    //puts val in the array
     char addr = pot_AvgCounterVal % array_size;
     pot_array[addr] = val;
     uint32_t var;
+    // take the average of the array
     for ( var = 0; var < array_size; var++)
     {
         sum += pot_array[var];
@@ -183,10 +217,16 @@ uint32_t potAvgValue(uint32_t val)
     {
         sum /= array_size;
     }
+    //return averaged value
     return sum;
 }
 
-
+/**************************************************/
+//Purpose: Measure the analog value of the photoresistor and sends the value to
+//the photoAvgValue and the LightLED function.
+//Parameters: None.
+//Output: None.
+/**************************************************/
 void Photoresistor(void)
 {
     uint32_t val=0;
@@ -202,6 +242,12 @@ void Photoresistor(void)
     LightLED(val);
 }
 
+/**************************************************/
+//Purpose:Takes the current value of the photoresistor, stores it in an array,
+//takes the average of the array and outputs the average value.
+//Parameters: uint32_t val - Current ADC value from the photoresistor.
+//Output: The averaged value of the photoresistor.
+/**************************************************/
 uint32_t photoAvgValue(uint32_t val)
 {
     uint32_t sum = 0;
@@ -224,7 +270,11 @@ uint32_t photoAvgValue(uint32_t val)
     return sum;
 }
 
-
+/**************************************************/
+//Purpose: Test the functionality of the LEDs. For testing purposes only.
+//Parameters: None.
+//Output: None.
+/**************************************************/
 void LEDTest(void)
 {
     int var = 0;
@@ -236,9 +286,11 @@ void LEDTest(void)
     }
 }
 
- /**************************************************/
- //Purpose: Lights LEDs based on the input value.
- /**************************************************/
+/**************************************************/
+//Purpose: Light an LED based on the input value.
+//Parameter: None.
+//Output: None.
+/**************************************************/
  void LightLED(uint32_t value)
  {
      //LEDs OFF
@@ -248,6 +300,7 @@ void LEDTest(void)
      PWMOutputState(PWM0_BASE, PWM_OUT_2_BIT,   false);//PE4
      PWMOutputState(PWM0_BASE, PWM_OUT_5_BIT,   false);//PE5
 
+     //turn on one LED based on the val
      if((value >= 0) && (value <= 50 ))
      {
          return;
@@ -294,31 +347,40 @@ void LEDTest(void)
      }
  }
 
+/**************************************************/
+//Purpose: Setup pins PE5 and PB4 for PWM
+//Parameter: None.
+//Output: None.
+/**************************************************/
  void setupPWM_PE5_PB4()
 {
     //http://e2e.ti.com/support/microcontrollers/other_microcontrollers/f/908/p/293307/1024699
     SysCtlPWMClockSet(SYSCTL_PWMDIV_1);
 
+    //Enable PWM0
     SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM0);
 
     //SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
 
     //SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
 
+    //Configure GPIO pins
     GPIOPinConfigure(GPIO_PB4_M0PWM2);
 
     GPIOPinConfigure(GPIO_PE5_M0PWM5);
 
+    //Configure PWM pins
     GPIOPinTypePWM(GPIO_PORTB_BASE,GPIO_PIN_4 );
 
     GPIOPinTypePWM(GPIO_PORTE_BASE, GPIO_PIN_5);
 
+    //Configure PWM
     PWMGenConfigure(PWM0_BASE, PWM_GEN_1, (PWM_GEN_MODE_DOWN| PWM_GEN_MODE_NO_SYNC));
 
     PWMGenConfigure(PWM0_BASE, PWM_GEN_2, (PWM_GEN_MODE_DOWN| PWM_GEN_MODE_NO_SYNC));
 
+    //Enable PWM
     PWMGenEnable(PWM0_BASE, PWM_GEN_1);
 
     PWMGenEnable(PWM0_BASE, PWM_GEN_2);
 }
-
